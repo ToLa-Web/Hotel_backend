@@ -14,6 +14,7 @@ class Reservation extends Model
     protected $keyType = 'int'; // Set the primary key type
 
     protected $fillable = [
+        'hotelId',
         'userName',
         'startDate',
         'endDate',
@@ -23,4 +24,9 @@ class Reservation extends Model
         'status',
         'email',
     ];
+
+    public function hotel()
+    {
+        return $this->belongsTo(Hotel::class, 'hotelId', 'hotelId');
+    }
 }

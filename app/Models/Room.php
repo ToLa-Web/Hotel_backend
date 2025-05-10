@@ -14,6 +14,7 @@ class Room extends Model
     protected $keyType = 'int'; // Set the primary key type
 
     protected $fillable = [
+        'hotelId',
         'maxOccupancy',
         'available',
         'pricePerNight',
@@ -22,4 +23,9 @@ class Room extends Model
         'amenities',
         'image',
     ];
+
+    public function hotel()
+    {
+        return $this->belongsTo(Hotel::class, 'hotelId', 'hotelId');
+    }
 }

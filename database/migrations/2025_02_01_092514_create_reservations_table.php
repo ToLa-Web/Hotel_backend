@@ -15,6 +15,7 @@ return new class extends Migration
     {
         Schema::create('reservations', function (Blueprint $table) {
             $table->id('reservationID'); // Primary key
+            $table->unsignedBigInteger('hotelId'); // Foreign key for hotels
             $table->string('userName');
             $table->date('startDate');
             $table->date('endDate');
@@ -24,6 +25,9 @@ return new class extends Migration
             $table->enum('status', ['paid', 'not paid'])->default('not paid'); // Status field with enum
             $table->string('email');
             $table->timestamps(); // Created at and updated at timestamps
+
+            // Foreign key constraint
+            $table->foreign('hotelId')->references('hotelId')->on('hotels')->onDelete('cascade');
         });
     }
 

@@ -14,8 +14,6 @@ class Hotel extends Model
     protected $keyType = 'int'; // Set the primary key type
 
     protected $fillable = [
-        'reservationID',
-        'roomID',
         'hotelName',
         'amountRoom',
         'location',
@@ -23,13 +21,13 @@ class Hotel extends Model
     ];
 
     // Define relationships
-    public function reservation()
+    public function rooms()
     {
-        return $this->belongsTo(Reservation::class, 'reservationID', 'reservationID');
+        return $this->hasMany(Room::class, 'hotelId', 'hotelId');
     }
 
-    public function room()
+    public function reservations()
     {
-        return $this->belongsTo(Room::class, 'roomID', 'roomId');
+        return $this->hasMany(Reservation::class, 'hotelId', 'hotelId');
     }
 }
