@@ -43,6 +43,15 @@ class AuthController extends Controller
         return $this->createNewToken($token);
     }
 
+    public function user(Request $request)
+    {
+        return response()->json([
+            'status' => 'success',
+            'user' => auth()->user()
+        ]);
+
+    }
+
     public function register(RegisterRequest $request)
     {
         try {
@@ -97,10 +106,12 @@ class AuthController extends Controller
         }
     }
 
-    public function refresh()
+    public function refresh(Request $request)
     {
         try {
-            return $this->createNewToken(auth()->refresh());
+            // Invalidate the current token and generate a new one
+            $newToken = auth()->refresh(false, true);
+            return $this->createNewToken($newToken);
         } catch (\Exception $e) {
             Log::error('Token refresh error: ' . $e->getMessage());
             return response()->json([
@@ -133,7 +144,7 @@ class AuthController extends Controller
             'access_token' => $token,
             'token_type' => 'bearer',
             'expires_in' => auth()->factory()->getTTL() * 60,
-            'user' => auth()->user()
+            'user' => auth()->user() // This includes the role if it's in your User model
         ]);
     }
-} 
+}
