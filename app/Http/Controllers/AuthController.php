@@ -10,12 +10,14 @@ use App\Models\User;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
+
 
 class AuthController extends Controller
 {
     public function __construct()
     {
-        $this->middleware('auth:api', ['except' => ['login', 'register']]);
+        $this->middleware('auth:api', ['except' => ['login', 'register', 'refresh']]);
     }
 
     public function login(Request $request)
@@ -49,7 +51,6 @@ class AuthController extends Controller
             'status' => 'success',
             'user' => auth()->user()
         ]);
-
     }
 
     public function register(RegisterRequest $request)
@@ -80,10 +81,23 @@ class AuthController extends Controller
         }
     }
 
-    public function logout()
+    public function logout(Request $request)
     {
         try {
+            // Invalidate the current token
             auth()->logout();
+            
+            // Blacklist the refresh token if provided
+            $refreshToken = $request->refresh_token;
+            if ($refreshToken) {
+                try {
+                    JWTAuth::setToken($refreshToken)->invalidate();
+                } catch (\Exception $e) {
+                    // Ignore errors related to invalid refresh tokens
+                    Log::info('Failed to invalidate refresh token: ' . $e->getMessage());
+                }
+            }
+            
             return response()->json([
                 'status' => 'success',
                 'message' => 'User successfully logged out'
@@ -100,11 +114,55 @@ class AuthController extends Controller
     public function refresh(Request $request)
     {
         try {
-            // Invalidate the current token and generate a new one
-            $newToken = auth()->refresh(false, true);
-            return $this->createNewToken($newToken);
+            $validator = Validator::make($request->all(), [
+                'refresh_token' => 'required|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Refresh token is required',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $refreshToken = $request->refresh_token;
+            
+            // Set the refresh token as the current token
+            JWTAuth::setToken($refreshToken);
+            
+            // Verify the token is valid
+            if (!JWTAuth::check()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Invalid refresh token'
+                ], 401);
+            }
+            
+            // Get the user ID from the refresh token
+            $user = JWTAuth::toUser();
+            
+            // Generate a new access token for the user
+            $newToken = JWTAuth::fromUser($user);
+            
+            // Generate a new refresh token
+            $newRefreshToken = $this->generateRefreshToken($user);
+            
+            // Invalidate the old refresh token (optional but recommended for security)
+            try {
+                JWTAuth::setToken($refreshToken)->invalidate();
+            } catch (\Exception $e) {
+                Log::error('Failed to invalidate old refresh token: ' . $e->getMessage());
+            }
+            
+            return $this->respondWithTokens($newToken, $newRefreshToken);
+            
         } catch (\Exception $e) {
-            // handle error
+            Log::error('Token refresh error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Token refresh failed'
+            ], 401);
         }
     }
 
@@ -166,13 +224,54 @@ class AuthController extends Controller
         }
     }
 
+    /**
+     * Generate a refresh token for the user
+     * 
+     * @param User $user
+     * @return string
+     */
+    protected function generateRefreshToken(User $user)
+    {
+        // Create a custom token with longer expiry (e.g., 30 days)
+        $customClaims = [
+            'sub' => $user->id,
+            'typ' => 'refresh',
+            // Setting a longer expiration for refresh token
+            'exp' => time() + (60 * 60 * 24 * 30) // 30 days
+        ];
+        
+        return JWTAuth::customClaims($customClaims)->fromUser($user);
+    }
+
+    /**
+     * Create a response with both access and refresh tokens
+     *
+     * @param string $token
+     * @return \Illuminate\Http\JsonResponse
+     */
     protected function createNewToken($token)
+    {
+        $user = auth()->user();
+        $refreshToken = $this->generateRefreshToken($user);
+        
+        return $this->respondWithTokens($token, $refreshToken);
+    }
+    
+    /**
+     * Respond with both tokens
+     * 
+     * @param string $accessToken
+     * @param string $refreshToken
+     * @return \Illuminate\Http\JsonResponse
+     */
+    protected function respondWithTokens($accessToken, $refreshToken)
     {
         return response()->json([
             'status' => 'success',
-            'access_token' => $token,
+            'access_token' => $accessToken,
+            'refresh_token' => $refreshToken,
             'token_type' => 'bearer',
-            'expires_in' => auth()->factory()->getTTL() * 60,
+            'access_expires_in' => auth()->factory()->getTTL() * 60, // Access token expiry in seconds
             'user' => auth()->user()
         ]);
     }
