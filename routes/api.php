@@ -67,4 +67,4 @@ Route::group(['middleware' => 'auth:api'], function () {
 });
 
     Route::get('/user',[AuthController::class, 'user']);
-  Route::post('/refresh', [AuthController::class, 'refresh']);
+    Route::post('/refresh', [AuthController::class, 'refresh']);

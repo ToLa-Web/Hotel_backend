@@ -61,6 +61,7 @@ class AuthController extends Controller
                 'name' => $request->name,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
+                'role' => $request->role ?? 'User', // Default role is User if not specified
             ]);
 
             // Generate token for the newly registered user
@@ -68,23 +69,13 @@ class AuthController extends Controller
 
             DB::commit();
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'User successfully registered',
-                'user' => $user,
-                'access_token' => $token,
-                'token_type' => 'bearer',
-                'expires_in' => auth()->factory()->getTTL() * 60
-            ], 201);
-
+            return $this->createNewToken($token);
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Registration error: ' . $e->getMessage());
-            
             return response()->json([
                 'status' => 'error',
-                'message' => 'Registration failed',
-                'error' => $e->getMessage()
+                'message' => 'Registration failed'
             ], 500);
         }
     }
@@ -113,11 +104,7 @@ class AuthController extends Controller
             $newToken = auth()->refresh(false, true);
             return $this->createNewToken($newToken);
         } catch (\Exception $e) {
-            Log::error('Token refresh error: ' . $e->getMessage());
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Token refresh failed'
-            ], 500);
+            // handle error
         }
     }
 
@@ -137,6 +124,48 @@ class AuthController extends Controller
         }
     }
 
+    public function updateUserRole(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'userId' => 'required|exists:users,id',
+                'role' => 'required|in:User,Owner,Admin'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Only Admin can update roles
+            if (auth()->user()->role !== 'Admin') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthorized: Only Admin can update roles'
+                ], 403);
+            }
+
+            $user = User::findOrFail($request->userId);
+            $user->role = $request->role;
+            $user->save();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'User role updated successfully',
+                'user' => $user
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Role update error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update user role'
+            ], 500);
+        }
+    }
+
     protected function createNewToken($token)
     {
         return response()->json([
@@ -144,7 +173,7 @@ class AuthController extends Controller
             'access_token' => $token,
             'token_type' => 'bearer',
             'expires_in' => auth()->factory()->getTTL() * 60,
-            'user' => auth()->user() // This includes the role if it's in your User model
+            'user' => auth()->user()
         ]);
     }
 }
