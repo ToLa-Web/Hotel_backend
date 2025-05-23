@@ -21,18 +21,12 @@ use App\Models\User;
 |
 */
 
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user();
-});
+// Public routes
 Route::get('/rooms/filter', [RoomController::class, 'filterByIds']);
-
 Route::apiResource('explore', ExploreController::class);
 Route::apiResource('rooms', RoomController::class);
 Route::apiResource('hotels', HotelController::class);
 Route::apiResource('reservations', ReservationController::class);
-
-// New route for filtering rooms by IDs (for homepage or special sections)
-
 
 // File upload routes
 Route::post('upload/image', [UploadController::class, 'uploadImage']);
@@ -41,20 +35,19 @@ Route::post('upload/video', [UploadController::class, 'uploadVideo']);
 // Authentication routes
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/refresh', [AuthController::class, 'refresh']); // <-- Refresh token endpoint
 
-// Protected routes
+// Protected routes (JWT)
 Route::group(['middleware' => 'auth:api'], function () {
     Route::post('/logout', [AuthController::class, 'logout']);
-  
     Route::get('/user-profile', [AuthController::class, 'userProfile']);
 
-    // Get all users (protected route)
+    // Get all users
     Route::get('/users', function () {
-        return \App\Models\User::all();
+        return User::all();
     });
 
-
-    // Update user role (protected route)
+    // Update user role
     Route::patch('/users', function (Request $request) {
         $user = User::find($request->userId);
         if ($user) {
@@ -65,6 +58,3 @@ Route::group(['middleware' => 'auth:api'], function () {
         return response()->json(['error' => 'User not found'], 404);
     });
 });
-
-    Route::get('/user',[AuthController::class, 'user']);
-    Route::post('/refresh', [AuthController::class, 'refresh']);

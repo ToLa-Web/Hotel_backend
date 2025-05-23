@@ -167,20 +167,63 @@ class AuthController extends Controller
     }
 
     public function userProfile()
-    {
-        try {
-            return response()->json([
-                'status' => 'success',
-                'user' => auth()->user()
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Profile fetch error: ' . $e->getMessage());
+{
+    try {
+        $user = Auth::user();
+        
+        if (!$user) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to fetch user profile'
-            ], 500);
+                'message' => 'User not authenticated'
+            ], 401);
         }
+
+        // Define role permissions structure (could be moved to config or database)
+        $rolePermissions = [
+            'Admin' => [
+                'permissions' => ['dashboard', 'users', 'settings'],
+                'access_level' => 100
+            ],
+            'Owner' => [
+                'permissions' => ['reservation', 'properties', 'reports'],
+                'access_level' => 80
+            ],
+            'User' => [
+                'permissions' => ['profile', 'bookings'],
+                'access_level' => 50
+            ]
+        ];
+
+        // Get permissions for the user's role with fallback
+        $userPermissions = $rolePermissions[$user->role] ?? [
+            'permissions' => [],
+            'access_level' => 0
+        ];
+
+        return response()->json([
+            'status' => 'success',
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'role' => $user->role
+            ],
+            'permissions' => $userPermissions['permissions'],
+            'access_level' => $userPermissions['access_level'],
+            'meta' => [
+                'permissions_defined' => !empty($userPermissions['permissions'])
+            ]
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Profile fetch error: ' . $e->getMessage());
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Failed to fetch user profile',
+            'error' => config('app.debug') ? $e->getMessage() : null
+        ], 500);
     }
+}
 
     public function updateUserRole(Request $request)
     {
