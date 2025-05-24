@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
+use App\Http\Controllers\UserController;
 
 
 class AuthController extends Controller
@@ -45,13 +46,6 @@ class AuthController extends Controller
         return $this->createNewToken($token);
     }
 
-    public function user(Request $request)
-    {
-        return response()->json([
-            'status' => 'success',
-            'user' => auth()->user()
-        ]);
-    }
 
     public function register(RegisterRequest $request)
     {
@@ -165,65 +159,120 @@ class AuthController extends Controller
             ], 401);
         }
     }
-
-    public function userProfile()
+    
+     public function user(Request $request)
 {
-    try {
-        $user = Auth::user();
-        
-        if (!$user) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'User not authenticated'
-            ], 401);
-        }
+    $user = auth()->user();
 
-        // Define role permissions structure (could be moved to config or database)
-        $rolePermissions = [
-            'Admin' => [
-                'permissions' => ['dashboard', 'users', 'settings'],
-                'access_level' => 100
-            ],
-            'Owner' => [
-                'permissions' => ['reservation', 'properties', 'reports'],
-                'access_level' => 80
-            ],
-            'User' => [
-                'permissions' => ['profile', 'bookings'],
-                'access_level' => 50
-            ]
-        ];
+    // Define roles and permissions
+    $rolePermissions = [
+        'Admin' => [
+            'permissions' => ['dashboard', 'users', 'settings'],
+            'access_level' => 100
+        ],
+        'Owner' => [
+            'permissions' => ['reservation', 'properties', 'reports'],
+            'access_level' => 80
+        ],
+        'User' => [
+            'permissions' => ['profile', 'bookings'],
+            'access_level' => 50
+        ]
+    ];
 
-        // Get permissions for the user's role with fallback
-        $userPermissions = $rolePermissions[$user->role] ?? [
-            'permissions' => [],
-            'access_level' => 0
-        ];
+    $userPermissions = $rolePermissions[$user->role] ?? [
+        'permissions' => [],
+        'access_level' => 0
+    ];
 
-        return response()->json([
-            'status' => 'success',
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role
-            ],
-            'permissions' => $userPermissions['permissions'],
-            'access_level' => $userPermissions['access_level'],
-            'meta' => [
-                'permissions_defined' => !empty($userPermissions['permissions'])
-            ]
-        ]);
+    return response()->json([
+        'status' => 'success',
+        'user' => [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'role' => $user->role,
+        ],
+        'permissions' => $userPermissions['permissions'],
+        'access_level' => $userPermissions['access_level']
+    ]);
+}
+    public function users()
+{
+    $user = auth()->user();
 
-    } catch (\Exception $e) {
-        Log::error('Profile fetch error: ' . $e->getMessage());
+    if (!$user || !in_array($user->role, ['Admin', 'Owner'])) {
         return response()->json([
             'status' => 'error',
-            'message' => 'Failed to fetch user profile',
-            'error' => config('app.debug') ? $e->getMessage() : null
-        ], 500);
+            'message' => 'Forbidden'
+        ], 403);
     }
+
+    $users = User::all(); // or paginate
+
+    return response()->json([
+        'status' => 'success',
+        'users' => $users
+    ]);
 }
+
+    public function userProfile()
+    {
+        try {
+            $user = Auth::user();
+            
+            if (!$user) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+            
+            // Define role permissions structure (could be moved to config or database)
+            $rolePermissions = [
+                'Admin' => [
+                    'permissions' => ['dashboard', 'users', 'settings'],
+                    'access_level' => 100
+                ],
+                'Owner' => [
+                    'permissions' => ['reservation', 'properties', 'reports'],
+                    'access_level' => 80
+                ],
+                'User' => [
+                    'permissions' => ['profile', 'bookings'],
+                    'access_level' => 50
+                ]
+            ];
+            
+            // Get permissions for the user's role with fallback
+            $userPermissions = $rolePermissions[$user->role] ?? [
+                'permissions' => [],
+                'access_level' => 0
+            ];
+            
+            return response()->json([
+                'status' => 'success',
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role
+                ],
+                'permissions' => $userPermissions['permissions'],
+                'access_level' => $userPermissions['access_level'],
+                'meta' => [
+                    'permissions_defined' => !empty($userPermissions['permissions'])
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Profile fetch error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch user profile',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
 
     public function updateUserRole(Request $request)
     {
