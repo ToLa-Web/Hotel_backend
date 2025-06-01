@@ -3,128 +3,165 @@
 namespace App\Http\Controllers;
 
 use App\Models\Room;
-use App\Services\CloudinaryService;
+use App\Models\Hotel;
+use App\Models\RoomType;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 
 class RoomController extends Controller
 {
-    protected $cloudinaryService;
-
-    public function __construct(CloudinaryService $cloudinaryService)
+    public function index(Request $request): JsonResponse
     {
-        $this->cloudinaryService = $cloudinaryService;
+        $query = Room::with(['hotel', 'roomType']);
+        
+        if ($request->has('hotel_id')) {
+            $query->where('hotel_id', $request->hotel_id);
+        }
+        
+        if ($request->has('room_type_id')) {
+            $query->where('room_type_id', $request->room_type_id);
+        }
+        
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+        
+        if ($request->has('floor')) {
+            $query->where('floor', $request->floor);
+        }
+        
+        $rooms = $query->paginate($request->get('per_page', 15));
+        
+        return response()->json($rooms);
     }
 
-    // Get all rooms
-    public function index()
+    public function store(Request $request): JsonResponse
     {
-        return Room::all();
-    }
-
-    // Create a new room
-    public function store(Request $request)
-    {
-        $request->validate([
-            'hotelId' => 'required|exists:hotels,hotelId',
-            'maxOccupancy' => 'required|integer',
-            'available' => 'required|boolean',
-            'pricePerNight' => 'required|numeric',
-            'roomType' => 'required|string',
-            'bedType' => 'required|string',
-            'amenities' => 'nullable|string',
-            'image' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048'
+        $validated = $request->validate([
+            'hotel_id' => 'required|exists:hotels,id',
+            'room_type_id' => 'required|exists:room_types,id',
+            'room_number' => 'required|string|max:10',
+            'floor' => 'nullable|integer|min:0',
+            'status' => 'required|in:available,occupied,maintenance,out_of_order',
+            'notes' => 'nullable|string'
         ]);
 
-        // Upload image to Cloudinary
-        $imageFile = $request->file('image');
-        $uploadResult = $this->cloudinaryService->uploadImage($imageFile->getRealPath());
+        // Check if room number already exists for this hotel
+        $existingRoom = Room::where('hotel_id', $validated['hotel_id'])
+            ->where('room_number', $validated['room_number'])
+            ->first();
 
-        if (!$uploadResult['success']) {
+        if ($existingRoom) {
             return response()->json([
-                'message' => 'Failed to upload image',
-                'error' => $uploadResult['message']
-            ], 500);
+                'message' => 'Room number already exists for this hotel'
+            ], 422);
         }
 
-        $room = Room::create([
-            'hotelId' => $request->hotelId,
-            'maxOccupancy' => $request->maxOccupancy,
-            'available' => $request->available,
-            'pricePerNight' => $request->pricePerNight,
-            'roomType' => $request->roomType,
-            'bedType' => $request->bedType,
-            'amenities' => $request->amenities,
-            'image' => $uploadResult['url'],
-        ]);
+        // Verify room type belongs to the hotel
+        $roomType = RoomType::where('id', $validated['room_type_id'])
+            ->where('hotel_id', $validated['hotel_id'])
+            ->first();
 
-        return response()->json([
-            'message' => 'Room created successfully',
-            'data' => $room
-        ], 201);
+        if (!$roomType) {
+            return response()->json([
+                'message' => 'Room type does not belong to the specified hotel'
+            ], 422);
+        }
+
+        $room = Room::create($validated);
+        $room->load(['hotel', 'roomType']);
+
+        return response()->json($room, 201);
     }
 
-    // Get a single room
-    public function show($id)
+    public function show(Room $room): JsonResponse
     {
-        return Room::findOrFail($id);
-    }
-    // Filter rooms by IDs
-    public function filterByIds(Request $request)
-    {
-        $ids = explode(',', $request->query('ids', ''));
-        return Room::whereIn('roomId', $ids)->get(); // Use 'roomId' if that's your PK
+        $room->load(['hotel', 'roomType', 'reservations' => function($query) {
+            $query->where('status', '!=', 'cancelled')
+                  ->orderBy('check_in_date', 'desc');
+        }]);
+        
+        return response()->json($room);
     }
 
-    // Update a room
-    public function update(Request $request, $id)
+    public function update(Request $request, Room $room): JsonResponse
     {
-        $room = Room::findOrFail($id);
-
-        $request->validate([
-            'hotelId' => 'sometimes|exists:hotels,hotelId',
-            'maxOccupancy' => 'sometimes|integer',
-            'available' => 'sometimes|boolean',
-            'pricePerNight' => 'sometimes|numeric',
-            'roomType' => 'sometimes|string',
-            'bedType' => 'sometimes|string',
-            'amenities' => 'nullable|string',
-            'image' => 'sometimes|image|mimes:jpeg,png,jpg,gif|max:2048'
+        $validated = $request->validate([
+            'room_number' => 'sometimes|string|max:10',
+            'floor' => 'nullable|integer|min:0',
+            'status' => 'sometimes|in:available,occupied,maintenance,out_of_order',
+            'notes' => 'nullable|string'
         ]);
 
-        $updateData = $request->only([
-            'hotelId', 'maxOccupancy', 'available', 'pricePerNight',
-            'roomType', 'bedType', 'amenities'
-        ]);
+        // Check if room number already exists for this hotel (excluding current room)
+        if (isset($validated['room_number'])) {
+            $existingRoom = Room::where('hotel_id', $room->hotel_id)
+                ->where('room_number', $validated['room_number'])
+                ->where('id', '!=', $room->id)
+                ->first();
 
-        // Handle image upload if provided
-        if ($request->hasFile('image')) {
-            $imageFile = $request->file('image');
-            $uploadResult = $this->cloudinaryService->uploadImage($imageFile->getRealPath());
-
-            if (!$uploadResult['success']) {
+            if ($existingRoom) {
                 return response()->json([
-                    'message' => 'Failed to upload image',
-                    'error' => $uploadResult['message']
-                ], 500);
+                    'message' => 'Room number already exists for this hotel'
+                ], 422);
             }
-
-            $updateData['image'] = $uploadResult['url'];
         }
 
-        $room->update($updateData);
-        $room->refresh();
+        $room->update($validated);
+        $room->load(['hotel', 'roomType']);
+
+        return response()->json($room);
+    }
+
+    public function destroy(Room $room): JsonResponse
+    {
+        // Check if room has active reservations
+        $activeReservations = $room->reservations()
+            ->whereIn('status', ['confirmed', 'checked_in'])
+            ->count();
+
+        if ($activeReservations > 0) {
+            return response()->json([
+                'message' => 'Cannot delete room with active reservations'
+            ], 422);
+        }
+
+        $room->delete();
+        return response()->json(['message' => 'Room deleted successfully']);
+    }
+
+    public function checkAvailability(Request $request, Room $room): JsonResponse
+    {
+        $validated = $request->validate([
+            'check_in' => 'required|date|after:today',
+            'check_out' => 'required|date|after:check_in'
+        ]);
+
+        $isAvailable = $room->isAvailable(
+            $validated['check_in'], 
+            $validated['check_out']
+        );
 
         return response()->json([
-            'message' => 'Room updated successfully',
-            'data' => $room
+            'room' => $room,
+            'is_available' => $isAvailable,
+            'check_in' => $validated['check_in'],
+            'check_out' => $validated['check_out']
         ]);
     }
 
-    // Delete a room
-    public function destroy($id)
+    public function updateStatus(Request $request, Room $room): JsonResponse
     {
-        return Room::destroy($id);
-    }
+        $validated = $request->validate([
+            'status' => 'required|in:available,occupied,maintenance,out_of_order',
+            'notes' => 'nullable|string'
+        ]);
 
-    
+        $room->update($validated);
+
+        return response()->json([
+            'message' => 'Room status updated successfully',
+            'room' => $room
+        ]);
+    }
 }
