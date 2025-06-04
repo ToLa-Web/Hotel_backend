@@ -10,6 +10,7 @@ use App\Http\Controllers\UploadController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\RoomTypeController;
+use App\Http\Controllers\PaymentController; 
 
 /*
 |--------------------------------------------------------------------------
@@ -21,45 +22,6 @@ use App\Http\Controllers\RoomTypeController;
 | is assigned the "api" middleware group. Enjoy building your API!
 |
 */
-
-/* // Public routes
-Route::get('/rooms/filter', [RoomController::class, 'filterByIds']);
-Route::apiResource('explore', ExploreController::class);
-Route::apiResource('rooms', RoomController::class)->only(['index', 'show']);
-Route::apiResource('hotels', HotelController::class)->only(['index', 'show']);
-Route::apiResource('reservations', ReservationController::class)->only(['index', 'show']);
-
-// File upload routes
-Route::post('upload/image', [UploadController::class, 'uploadImage']);
-Route::post('upload/video', [UploadController::class, 'uploadVideo']);
-
-// Authentication routes (public)
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
-Route::post('/refresh', [AuthController::class, 'refresh']);
-
-// Protected routes (require JWT authentication)
-Route::middleware(['auth:api'])->group(function () {
-    // Auth-related routes
-    Route::post('/logout', [AuthController::class, 'logout']);
-    Route::get('/user/profile', [AuthController::class, 'userProfile']);  // Matches api.get("/user/profile")
-    Route::get('/user-profile', [AuthController::class, 'userProfile']); // Keep this for backward compatibility
-    
-    // Regular authenticated user routes
-    Route::apiResource('reservations', ReservationController::class)->except(['index', 'show']);
-    
-    // Admin and Owner routes
-    Route::middleware(['role:Admin,Owner'])->group(function () {
-        Route::apiResource('rooms', RoomController::class)->except(['index', 'show']);
-        Route::apiResource('hotels', HotelController::class)->except(['index', 'show']);
-        Route::get('/users', [AuthController::class, 'users']); // Get all users
-    });
-
-    // Admin-only routes
-    Route::middleware(['role:Admin'])->group(function () {
-        Route::patch('/users/{user}/role', [AuthController::class, 'updateUserRole']); // Update user role
-    });
-}); */
 
 // Public routes
 Route::get('/rooms/filter', [RoomController::class, 'filterByIds']);
@@ -92,8 +54,8 @@ Route::post('/refresh', [AuthController::class, 'refresh']);
 Route::middleware(['auth:api'])->group(function () {
     // Auth-related routes
     Route::post('/logout', [AuthController::class, 'logout']);
-    Route::get('/user/profile', [AuthController::class, 'userProfile']);  // Matches api.get("/user/profile")
-    Route::get('/user-profile', [AuthController::class, 'userProfile']); // Keep this for backward compatibility
+    Route::get('/user/profile', [AuthController::class, 'userProfile']);
+    Route::get('/user-profile', [AuthController::class, 'userProfile']);
     
     // Regular authenticated user routes (Guests can make reservations)
     Route::apiResource('reservations', ReservationController::class)->except(['index', 'show']);
@@ -126,17 +88,16 @@ Route::middleware(['auth:api'])->group(function () {
         Route::post('/payments/{payment}/refund', [PaymentController::class, 'refund']);
         
         // User management
-        Route::get('/users', [AuthController::class, 'users']); // Get all users
+        Route::get('/users', [AuthController::class, 'users']);
     });
 
     // Admin-only routes
     Route::middleware(['role:Admin'])->group(function () {
-        Route::patch('/users/{user}/role', [AuthController::class, 'updateUserRole']); // Update user role
+        Route::patch('/users/{user}/role', [AuthController::class, 'updateUserRole']);
     });
     
-    // Owner-specific routes (owners can only manage their own hotels)
+    // Owner-specific routes
     Route::middleware(['role:Owner'])->group(function () {
-        // These routes would need additional middleware to ensure owners only access their own hotels
-        // You might want to create a custom middleware for this
+        // Owner-specific routes here
     });
 });

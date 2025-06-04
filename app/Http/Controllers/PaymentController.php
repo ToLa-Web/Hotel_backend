@@ -44,34 +44,41 @@ class PaymentController extends Controller
     }
 
     public function store(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'reservation_id' => 'required|exists:reservations,id',
-            'amount' => 'required|numeric|min:0.01',
-            'currency' => 'required|string|size:3',
-            'payment_method' => 'required|in:credit_card,debit_card,paypal,bank_transfer,cash',
-            'gateway' => 'nullable|string',
-            'gateway_response' => 'nullable|array'
-        ]);
+{
+    $validated = $request->validate([
+        'reservation_id' => 'required|exists:reservations,id',
+        'amount' => 'required|numeric|min:0.01',
+        'currency' => 'required|string|size:3',
+        'payment_method' => 'required|in:credit_card,debit_card,paypal,bank_transfer,cash',
+        'gateway' => 'nullable|string',
+        'gateway_response' => 'nullable|array'
+    ]);
 
-        $reservation = Reservation::find($validated['reservation_id']);
-        
-        // Check if payment amount doesn't exceed pending amount
-        if ($validated['amount'] > $reservation->pending_amount) {
-            return response()->json([
-                'message' => 'Payment amount cannot exceed pending amount'
-            ], 422);
-        }
-
-        $payment = Payment::create(array_merge($validated, [
-            'payment_id' => 'PAY-' . strtoupper(uniqid()),
-            'status' => 'pending'
-        ]));
-
-        $payment->load(['reservation.user', 'reservation.hotel']);
-
-        return response()->json($payment, 201);
+    $reservation = Reservation::find($validated['reservation_id']);
+    
+    // Check if payment amount doesn't exceed pending amount
+    if ($validated['amount'] > $reservation->pending_amount) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Payment amount cannot exceed pending amount'
+        ], 422);
     }
+
+    $payment = Payment::create(array_merge($validated, [
+        'payment_id' => 'PAY-' . strtoupper(uniqid()),
+        'status' => 'pending',
+        'gateway' => $validated['gateway'] ?? 'stripe'
+    ]));
+
+    $payment->load(['reservation.user', 'reservation.hotel']);
+
+    // Return consistent response format
+    return response()->json([
+        'status' => 'success',
+        'data' => $payment,
+        'message' => 'Payment created successfully'
+    ], 201);
+}
 
     public function show(Payment $payment): JsonResponse
     {
@@ -133,11 +140,7 @@ class PaymentController extends Controller
 
     public function complete(Request $request, Payment $payment): JsonResponse
     {
-        if ($payment->status !== 'pending') {
-            return response()->json([
-                'message' => 'Only pending payments can be completed'
-            ], 422);
-        }
+    
 
         $validated = $request->validate([
             'gateway_response' => 'nullable|array'
@@ -156,7 +159,7 @@ class PaymentController extends Controller
         $reservation->update([
             'paid_amount' => $totalPaid,
             'pending_amount' => $reservation->total_amount - $totalPaid,
-            'payment_status' => $totalPaid >= $reservation->total_amount ? 'completed' : 'partial'
+            // 'payment_status' => $totalPaid >= $reservation->total_amount ? 'completed' : 'partial'
         ]);
 
         return response()->json([
