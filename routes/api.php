@@ -8,6 +8,7 @@ use App\Http\Controllers\HotelController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\UploadController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\OwnerController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\RoomTypeController;
 use App\Http\Controllers\PaymentController; 
@@ -24,7 +25,7 @@ use App\Http\Controllers\PaymentController;
 */
 
 // Public routes
-Route::get('/rooms/filter', [RoomController::class, 'filterByIds']);
+Route::get('/room-types/featured', [RoomTypeController::class, 'featuredRoomTypes']);
 Route::apiResource('explore', ExploreController::class);
 Route::apiResource('rooms', RoomController::class)->only(['index', 'show']);
 Route::apiResource('hotels', HotelController::class)->only(['index', 'show']);
@@ -68,13 +69,13 @@ Route::middleware(['auth:api'])->group(function () {
     
     // Admin and Owner routes
     Route::middleware(['role:Admin,Owner'])->group(function () {
-        // Room management
-        Route::apiResource('rooms', RoomController::class)->except(['index', 'show']);
-        Route::patch('/rooms/{room}/status', [RoomController::class, 'updateStatus']);
-        
         // Hotel management
         Route::apiResource('hotels', HotelController::class)->except(['index', 'show']);
-        
+        // Room management
+
+        Route::apiResource('rooms', RoomController::class)->except(['index', 'show']);
+        Route::patch('/rooms/{room}/status', [RoomController::class, 'updateStatus']);
+
         // Room type management
         Route::apiResource('room-types', RoomTypeController::class)->except(['index', 'show']);
         
@@ -98,6 +99,21 @@ Route::middleware(['auth:api'])->group(function () {
     
     // Owner-specific routes
     Route::middleware(['role:Owner'])->group(function () {
-        // Owner-specific routes here
+        // Dashboard
+        Route::get('/owner/dashboard', [OwnerController::class, 'dashboard']);
+        
+        // Hotel CRUD for owners
+        Route::get('/owner/hotels', [OwnerController::class, 'getHotels']);
+        Route::post('/owner/hotels', [OwnerController::class, 'createHotel']);
+        Route::put('/owner/hotels/{hotel}', [OwnerController::class, 'updateHotel']);
+        Route::delete('/owner/hotels/{hotel}', [OwnerController::class, 'deleteHotel']);
+        
+        // Analytics
+        Route::get('/owner/analytics', [OwnerController::class, 'getAnalytics']);
+        
+        // Owner-specific data
+        Route::get('/owner/reservations', [ReservationController::class, 'ownerReservations']);
+        Route::get('/owner/hotels/{hotel}', [OwnerController::class, 'getHotelDetailById']);
+        
     });
 });

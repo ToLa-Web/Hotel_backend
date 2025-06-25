@@ -363,7 +363,7 @@ class AuthController extends Controller
             'access_token' => $accessToken,
             'refresh_token' => $refreshToken,
             'token_type' => 'bearer',
-            'access_expires_in' => auth()->factory()->getTTL() * 60, // Access token expiry in seconds
+            'access_expires_in' => JWTAuth::factory()->getTTL() * 60, // Access token expiry in seconds
             'user' => auth()->user()
         ]);
     }

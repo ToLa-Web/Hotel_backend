@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Models\Hotel;
 use App\Services\CloudinaryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class HotelController extends Controller
 {
@@ -92,7 +94,7 @@ class HotelController extends Controller
      */
     public function store(Request $request)
     {
-        $validator = Validator::make($request->all(), [
+        $validated = $request->validate([
             'name'        => 'required|string|max:255',
             'description' => 'required|string',
             'address'     => 'required|string',
@@ -111,46 +113,42 @@ class HotelController extends Controller
             'status'      => 'sometimes|in:active,inactive,under_review',
         ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'errors' => $validator->errors(),
-            ], 422);
-        }
-
         /* ---------- upload images to Cloudinary --------------------------- */
-        $imageUrls = [];
-        foreach ($request->file('images', []) as $image) {
-            $upload = $this->cloudinaryService->uploadImage($image->getRealPath());
-            if (!$upload['success']) {
-                return response()->json([
-                    'status'  => 'error',
-                    'message' => 'Failed to upload images',
-                    'error'   => $upload['message'],
-                ], 500);
+        if ($request->hasFile('images')) {
+            $uploadedImages = [];
+            foreach ($request->file('images') as $image) {
+                $uploadResult = $this->cloudinaryService->uploadImage($image->getRealPath());
+
+                if (!$uploadResult['success']) {
+                    throw ValidationException::withMessages([
+                        'images' => 'Failed to upload one or more images: ' . $uploadResult['message']
+                    ]);
+                }
+
+                $uploadedImages[] = $uploadResult['url'];
             }
-            $imageUrls[] = $upload['url'];
+            $validated['images'] = $uploadedImages;
         }
 
         /* ---------- create hotel ------------------------------------------ */
         $hotel = Hotel::create([
             'owner_id'     => auth()->id(),   // assumes JWT auth
-            'name'         => $request->name,
-            'slug'         => Str::slug($request->name),
-            'description'  => $request->description,
-            'address'      => $request->address,
-            'city'         => $request->city,
-            'state'        => $request->state,
-            'country'      => $request->country,
-            'postal_code'  => $request->postal_code,
-            'latitude'     => $request->latitude,
-            'longitude'    => $request->longitude,
-            'phone'        => $request->phone,
-            'email'        => $request->email,
-            'website'      => $request->website,
-            'amenities'    => json_encode($request->amenities),
-            'images'       => json_encode($imageUrls),
-            'status'       => $request->status ?? 'active',
+            'name'         => $validated['name'],
+            'slug'         => Str::slug($validated['name']),
+            'description'  => $validated['description'],
+            'address'      => $validated['address'],
+            'city'         => $validated['city'],
+            'state'        => $validated['state'],
+            'country'      => $validated['country'],
+            'postal_code'  => $validated['postal_code'],
+            'latitude'     => $validated['latitude'] ?? null,
+            'longitude'    => $validated['longitude'] ?? null,
+            'phone'        => $validated['phone'],
+            'email'        => $validated['email'],
+            'website'      => $validated['website'] ?? null,
+            'amenities'    => $validated['amenities'] ?? null,
+            'images'       => $validated['images'] ?? [],
+            'status'       => $validated['status'] ?? 'active',
         ]);
 
         return response()->json([
@@ -175,7 +173,7 @@ class HotelController extends Controller
             ], 403);
         }
 
-        $validator = Validator::make($request->all(), [
+        $validated = $request->validate([
             'name'        => 'sometimes|string|max:255',
             'description' => 'sometimes|string',
             'address'     => 'sometimes|string',
@@ -194,45 +192,32 @@ class HotelController extends Controller
             'status'      => 'sometimes|in:active,inactive,under_review',
         ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'errors' => $validator->errors(),
-            ], 422);
-        }
-
-        /* ---------- gather update data ------------------------------------ */
-        $data = $request->only([
-            'name','description','address','city','state','country',
-            'postal_code','latitude','longitude','phone','email',
-            'website','amenities','status',
-        ]);
-
-        if ($request->filled('name')) {
-            $data['slug'] = Str::slug($request->name);
-        }
-        if ($request->has('amenities')) {
-            $data['amenities'] = json_encode($request->amenities);
-        }
-
         /* ---------- handle new images ------------------------------------- */
         if ($request->hasFile('images')) {
-            $current    = json_decode($hotel->images, true) ?? [];
+            $uploadedImages = [];
             foreach ($request->file('images') as $image) {
-                $upload = $this->cloudinaryService->uploadImage($image->getRealPath());
-                if (!$upload['success']) {
-                    return response()->json([
-                        'status'  => 'error',
-                        'message' => 'Failed to upload images',
-                        'error'   => $upload['message'],
-                    ], 500);
+                $uploadResult = $this->cloudinaryService->uploadImage($image->getRealPath());
+
+                if (!$uploadResult['success']) {
+                    throw ValidationException::withMessages([
+                        'images' => 'Failed to upload one or more images: ' . $uploadResult['message']
+                    ]);
                 }
-                $current[] = $upload['url'];
+
+                $uploadedImages[] = $uploadResult['url'];
             }
-            $data['images'] = json_encode($current);
+
+            // Merge new images with existing ones if they exist
+            $existingImages = $hotel->images ?? [];
+            $validated['images'] = array_merge($existingImages, $uploadedImages);
         }
 
-        $hotel->update($data);
+        /* ---------- prepare update data ----------------------------------- */
+        if (isset($validated['name'])) {
+            $validated['slug'] = Str::slug($validated['name']);
+        }
+
+        $hotel->update($validated);
 
         return response()->json([
             'status'  => 'success',
@@ -259,5 +244,42 @@ class HotelController extends Controller
             'status' => 'success',
             'data'   => $hotels,
         ]);
+    }
+
+    /** POST /api/hotels/{id}/remove-image
+     *  Remove specific image from hotel.
+     */
+    public function removeImage(Request $request, int $id)
+    {
+        $hotel = Hotel::findOrFail($id);
+
+        // Only owner OR admin may update
+        if (auth()->id() !== $hotel->owner_id && !auth()->user()->isAdmin()) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Unauthorized',
+            ], 403);
+        }
+
+        $request->validate([
+            'image_url' => 'required|string'
+        ]);
+
+        $images = $hotel->images ?? [];
+
+        if (($key = array_search($request->image_url, $images)) !== false) {
+            unset($images[$key]);
+            $hotel->update(['images' => array_values($images)]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Image removed successfully'
+            ]);
+        }
+
+        return response()->json([
+            'status'  => 'error',
+            'message' => 'Image not found'
+        ], 404);
     }
 }
